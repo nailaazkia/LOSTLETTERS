@@ -20,6 +20,9 @@ public class Level5Manager : MonoBehaviour
     public RectTransform pintuKiri;
     public RectTransform pintuKanan;
 
+    [Header("Door & Lock Visuals")]
+    public GameObject lockIcon;
+
     [Header("Ending Effects")]
     public RectTransform glowingLight; 
     public Image whiteFlash;           
@@ -34,9 +37,70 @@ public class Level5Manager : MonoBehaviour
     private bool answerCorrect = false;
     private bool doorOpened = false;
 
+    private LevelRewardController rewardController;
+    private int hintUsageCount = 0;
+
+    private void EnsurePanelsAssigned()
+    {
+        Transform canvas = transform.Find("Canvas");
+        if (canvas == null && GameObject.Find("Canvas") != null) canvas = GameObject.Find("Canvas").transform;
+        if (canvas == null && FindObjectOfType<Canvas>(true) != null) canvas = FindObjectOfType<Canvas>(true).transform;
+
+        if (canvas != null)
+        {
+            if (losePanel == null)
+            {
+                Transform l = canvas.Find("Popup Salah");
+                if (l == null) l = canvas.Find("losePanel");
+                if (l == null) l = canvas.Find("LosePanel");
+                if (l != null) losePanel = l.gameObject;
+            }
+        }
+
+        if (lockIcon == null)
+        {
+            GameObject k = GameObject.Find("kunci_0");
+            if (k == null) k = GameObject.Find("kunci");
+            if (k == null && transform.Find("kunci_0") != null) k = transform.Find("kunci_0").gameObject;
+            if (k == null && GameObject.Find("PuzzleArea") != null && GameObject.Find("PuzzleArea").transform.Find("kunci_0") != null)
+                k = GameObject.Find("PuzzleArea").transform.Find("kunci_0").gameObject;
+            if (k == null && canvas != null && canvas.Find("kunci_0") != null)
+                k = canvas.Find("kunci_0").gameObject;
+            if (k != null) lockIcon = k;
+        }
+    }
+
+    void Awake()
+    {
+        EnsurePanelsAssigned();
+        if (lockIcon != null) lockIcon.SetActive(true);
+
+        if (losePanel != null) losePanel.SetActive(false);
+
+        if (GameObject.Find("Canvas") != null)
+        {
+            Transform c = GameObject.Find("Canvas").transform;
+            foreach (Transform child in c)
+            {
+                if (child.name.Contains("Popup Salah") || child.name.Contains("Popup Benar") || child.name.Contains("SettingsPanel") || child.name.Contains("losePanel") || child.name.Contains("winPanel"))
+                {
+                    child.gameObject.SetActive(false);
+                }
+            }
+        }
+
+        Time.timeScale = 1f;
+    }
+
     void Start()
     {
-        losePanel.SetActive(false);
+        EnsurePanelsAssigned();
+
+        if (losePanel != null && losePanel.GetComponent<PopupBlurOverlay>() == null) losePanel.AddComponent<PopupBlurOverlay>();
+        if (losePanel != null) losePanel.SetActive(false);
+
+        if (pintuKiriButton != null) pintuKiriButton.onClick.AddListener(OpenDoor);
+        if (pintuKananButton != null) pintuKananButton.onClick.AddListener(OpenDoor);
 
         if (glowingLight != null)
         {
@@ -49,6 +113,9 @@ public class Level5Manager : MonoBehaviour
             c.a = 0f;
             whiteFlash.color = c;
         }
+
+        // Tambahkan LevelRewardController
+        rewardController = gameObject.AddComponent<LevelRewardController>();
     }
 
     public void AddLetter(string letter)
@@ -76,7 +143,17 @@ public class Level5Manager : MonoBehaviour
         if (result == correctAnswer)
         {
             answerCorrect = true;
-            Debug.Log("BENAR");
+            Debug.Log("BENAR - Kode berhasil dibuka!");
+            LostLettersJournalController.MarkLevelCleared(5);
+            if (lockIcon != null) lockIcon.SetActive(false);
+            DoorController dc = FindObjectOfType<DoorController>();
+            if (dc != null) dc.UnlockDoor();
+
+            // Hitung dan berikan reward (tidak ditampilkan secara visual karena masuk ke cutscene)
+            if (rewardController != null)
+            {
+                rewardController.CalculateReward();
+            }
         }
         else
         {
@@ -87,7 +164,8 @@ public class Level5Manager : MonoBehaviour
 
     void ShowLose()
     {
-        losePanel.SetActive(true);
+        EnsurePanelsAssigned();
+        if (losePanel != null) losePanel.SetActive(true);
     }
 
     public void OpenDoor()
@@ -174,12 +252,30 @@ public class Level5Manager : MonoBehaviour
             slot.text = "";
         }
         currentIndex = 0;
-        losePanel.SetActive(false);
+        answerCorrect = false; // Reset status jawaban menjadi belum benar
+        if (lockIcon != null) lockIcon.SetActive(true); // Munculkan kembali visual gembok
+        DoorController dc = FindObjectOfType<DoorController>();
+        if (dc != null) dc.LockDoor();
+
+        if (losePanel != null) losePanel.SetActive(false);
+
+        if (GameObject.Find("Canvas") != null)
+        {
+            Transform c = GameObject.Find("Canvas").transform;
+            foreach (Transform child in c)
+            {
+                if (child.name.Contains("Popup Salah") || child.name.Contains("Popup Benar") || child.name.Contains("SettingsPanel") || child.name.Contains("losePanel") || child.name.Contains("winPanel"))
+                {
+                    child.gameObject.SetActive(false);
+                }
+            }
+        }
     }
 
     // 2. Restart Level (Memuat ulang Level 5 dari awal banget)
     public void RestartLevel()
     {
+        Time.timeScale = 1f;
         SceneManager.LoadScene(SceneManager.GetActiveScene().name);
     }
 
@@ -193,5 +289,19 @@ public class Level5Manager : MonoBehaviour
     public void GoToMainMenu()
     {
         SceneManager.LoadScene(mainMenuSceneName);
+    }
+
+    public void UseHint()
+    {
+        if (currentIndex < correctAnswer.Length)
+        {
+            string correctLetter = correctAnswer[currentIndex].ToString();
+            AddLetter(correctLetter);
+
+            if (rewardController != null)
+            {
+                rewardController.MarkHintUsed();
+            }
+        }
     }
 }
